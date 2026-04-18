@@ -79,13 +79,13 @@ export async function GET(request: Request) {
     }
 
     const updatesData = paginatedUpdates.map((entry: any) => {
-      const rawContent = entry.content?.$t || '';
+      const rawContent = entry.content || '';
       const cleanContent = rawContent.replace(/<[^>]*>?/gm, ' ').substring(0, 800) + '...';
       return {
         source: entry.source,
-        title: entry.title?.$t || 'Untitled',
+        title: entry.title || 'Untitled',
         content: cleanContent,
-        link: entry.link?.find((l: any) => l.rel === 'alternate')?.href || '#'
+        link: entry.link || '#'
       };
     });
 
