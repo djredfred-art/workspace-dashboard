@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 
 interface Recommendation {
   title: string;
@@ -14,45 +14,60 @@ interface Recommendation {
 export default function BestPractices() {
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
+  const [skip, setSkip] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+
+  const fetchRecs = useCallback(async (currentSkip: number, isInitial: boolean) => {
+    try {
+      if (isInitial) setLoading(true);
+      else setLoadingMore(true);
+      
+      const limit = isInitial ? 5 : 3;
+      const res = await fetch(`/api/best-practices?skip=${currentSkip}&limit=${limit}`);
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to generate best practices');
+      }
+      
+      if (data.recommendations) {
+        setRecs(prev => isInitial ? data.recommendations : [...prev, ...data.recommendations]);
+        setHasMore(data.hasMore);
+      } else {
+        throw new Error('Unexpected response format');
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function fetchRecs() {
-      try {
-        const res = await fetch('/api/best-practices');
-        const data = await res.json();
-        
-        if (!res.ok) {
-          throw new Error(data.error || 'Failed to generate best practices');
-        }
-        
-        if (data.recommendations) {
-          setRecs(data.recommendations);
-        } else {
-          throw new Error('Unexpected response format');
-        }
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    }
+    fetchRecs(0, true);
+  }, [fetchRecs]);
 
-    fetchRecs();
-  }, []);
+  const handleLoadMore = () => {
+    const newSkip = skip + (skip === 0 ? 5 : 3);
+    setSkip(newSkip);
+    fetchRecs(newSkip, false);
+  };
 
   return (
     <main>
       <header className="dashboard-header">
         <h1>Admin Best Practices</h1>
-        <p>Expert consulting advice on how to configure the newest Admin Console settings.</p>
+        <p>Expert consulting advice on how to configure the newest Admin Console and Chrome settings.</p>
       </header>
 
       <div className="container">
         {loading ? (
           <div className="loading-container">
             <div className="spinner"></div>
-            <p>Our AI Consultant is analyzing the latest Admin settings...</p>
+            <p>Our AI Consultant is analyzing the latest Workspace and Chrome updates...</p>
           </div>
         ) : error ? (
           <div className="error-container">
@@ -62,7 +77,7 @@ export default function BestPractices() {
         ) : recs.length === 0 ? (
           <div className="error-container">
             <h3>No Updates Found</h3>
-            <p>Could not find any recent Google Workspace updates regarding Admin settings.</p>
+            <p>Could not find any recent Google Workspace or Chrome updates regarding Admin settings.</p>
           </div>
         ) : (
           <div className="updates-grid" style={{ gridTemplateColumns: '1fr' }}>
@@ -92,6 +107,22 @@ export default function BestPractices() {
                 </div>
               </div>
             ))}
+            
+            {hasMore && (
+              <div style={{ textAlign: 'center', marginTop: '2rem' }}>
+                <button 
+                  onClick={handleLoadMore} 
+                  disabled={loadingMore}
+                  style={{
+                    backgroundColor: '#3b82f6', color: 'white', border: 'none', 
+                    padding: '12px 24px', borderRadius: '6px', fontSize: '1rem', 
+                    cursor: loadingMore ? 'not-allowed' : 'pointer',
+                    opacity: loadingMore ? 0.7 : 1, fontWeight: 'bold'
+                  }}>
+                  {loadingMore ? 'Consulting AI...' : 'Load 3 More Best Practices'}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

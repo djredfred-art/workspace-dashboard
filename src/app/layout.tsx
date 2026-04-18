@@ -32,6 +32,7 @@ export default function RootLayout({
             <div className="nav-logo">EduTech Dashboard</div>
             <div className="nav-links">
               <Link href="/" className="nav-link">Workspace Updates</Link>
+              <Link href="/chrome-updates" className="nav-link">Chrome Updates</Link>
               <Link href="/industry-news" className="nav-link">Industry News</Link>
               <Link href="/app-ideas" className="nav-link">App Ideas</Link>
               <Link href="/best-practices" className="nav-link">Best Practices</Link>

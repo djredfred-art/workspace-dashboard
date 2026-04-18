@@ -3,39 +3,79 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export const revalidate = 3600;
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    // 1. Fetch Google Workspace Updates
-    const res = await fetch('https://workspaceupdates.googleblog.com/feeds/posts/default?alt=json');
-    const data = await res.json();
-    const allEntries = data.feed?.entry || [];
+    const { searchParams } = new URL(request.url);
+    const skip = parseInt(searchParams.get('skip') || '0', 10);
+    const limit = parseInt(searchParams.get('limit') || '5', 10);
 
-    // 2. Filter for Admin Console related updates
+    // 1. Fetch both feeds
+    const [workspaceRes, chromeRes] = await Promise.all([
+      fetch('https://workspaceupdates.googleblog.com/feeds/posts/default?alt=json'),
+      fetch('https://chromereleases.googleblog.com/feeds/posts/default?alt=json')
+    ]);
+
+    const workspaceData = await workspaceRes.json();
+    const chromeData = await chromeRes.json();
+
+    const workspaceEntries = workspaceData.feed?.entry || [];
+    const chromeEntries = chromeData.feed?.entry || [];
+
+    // Tag and merge
+    const allEntries = [
+      ...workspaceEntries.map((e: any) => ({ ...e, source: 'Workspace' })),
+      ...chromeEntries.map((e: any) => ({ ...e, source: 'Chrome' }))
+    ];
+
+    // Sort by published date descending
+    allEntries.sort((a: any, b: any) => {
+      const dateA = new Date(a.published?.$t || 0).getTime();
+      const dateB = new Date(b.published?.$t || 0).getTime();
+      return dateB - dateA;
+    });
+
+    // 2. Filter for Admin Console / Policy related updates
     const adminUpdates = allEntries.filter((entry: any) => {
       const title = entry.title?.$t?.toLowerCase() || '';
       const content = entry.content?.$t?.toLowerCase() || '';
       
       const isWeeklyRecap = title.includes('weekly recap');
-      const mentionsAdmin = title.includes('admin') || content.includes('admin console') || title.includes('setting');
-      const isForEducation = content.includes('education'); // Checks "Availability" section for Education editions
       
-      return !isWeeklyRecap && mentionsAdmin && isForEducation;
-    }).slice(0, 3); // Take the top 3 most recent admin updates to avoid overwhelming the LLM
+      let isRelevant = false;
+      if (entry.source === 'Workspace') {
+        const mentionsAdmin = title.includes('admin') || content.includes('admin console') || title.includes('setting');
+        const isForEducation = content.includes('education');
+        isRelevant = mentionsAdmin && isForEducation;
+      } else {
+        // Chrome filtering
+        const isStable = title.includes('stable');
+        const isChromeOS = title.includes('chromeos') || title.includes('chrome os');
+        const isBrowser = title.includes('desktop') || title.includes('chrome browser');
+        const isBeta = title.includes('beta') || title.includes('dev');
+        const isPolicy = content.includes('policy') || content.includes('admin');
+        isRelevant = (isStable || isChromeOS || isBrowser) && !isBeta && isPolicy;
+      }
+      
+      return !isWeeklyRecap && isRelevant;
+    });
 
-    const updatesData = adminUpdates.map((entry: any) => {
-      // Strip HTML tags for cleaner prompt
+    // Apply pagination to avoid Gemini timeout
+    const paginatedUpdates = adminUpdates.slice(skip, skip + limit);
+
+    if (paginatedUpdates.length === 0) {
+      return NextResponse.json({ recommendations: [], hasMore: false });
+    }
+
+    const updatesData = paginatedUpdates.map((entry: any) => {
       const rawContent = entry.content?.$t || '';
       const cleanContent = rawContent.replace(/<[^>]*>?/gm, ' ').substring(0, 800) + '...';
       return {
+        source: entry.source,
         title: entry.title?.$t || 'Untitled',
         content: cleanContent,
         link: entry.link?.find((l: any) => l.rel === 'alternate')?.href || '#'
       };
     });
-
-    if (updatesData.length === 0) {
-      return NextResponse.json({ recommendations: [] });
-    }
 
     // 3. Initialize Gemini
     const apiKey = process.env.GEMINI_API_KEY;
@@ -48,8 +88,8 @@ export async function GET() {
 
     // 4. Prompt Gemini
     const prompt = `
-      You are an expert Google Workspace Education Consultant.
-      I am providing you with the latest Google Workspace updates that introduce new Admin Console settings.
+      You are an expert Google Workspace and Chrome Education Consultant.
+      I am providing you with the latest Google Workspace and Chrome updates that introduce new Admin Console settings or Chrome policies.
       
       For each update, explain what the setting does, and then provide tailored Best Practices on how a school district or university should configure it.
       
@@ -79,6 +119,9 @@ export async function GET() {
     
     const cleanText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     const finalData = JSON.parse(cleanText);
+    
+    // Check if there are more updates beyond this slice
+    finalData.hasMore = adminUpdates.length > skip + limit;
 
     return NextResponse.json(finalData);
   } catch (error) {
