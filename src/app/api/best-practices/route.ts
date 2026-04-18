@@ -14,7 +14,12 @@ export async function GET() {
     const adminUpdates = allEntries.filter((entry: any) => {
       const title = entry.title?.$t?.toLowerCase() || '';
       const content = entry.content?.$t?.toLowerCase() || '';
-      return title.includes('admin') || content.includes('admin console') || title.includes('setting');
+      
+      const isWeeklyRecap = title.includes('weekly recap');
+      const mentionsAdmin = title.includes('admin') || content.includes('admin console') || title.includes('setting');
+      const isForEducation = content.includes('education'); // Checks "Availability" section for Education editions
+      
+      return !isWeeklyRecap && mentionsAdmin && isForEducation;
     }).slice(0, 3); // Take the top 3 most recent admin updates to avoid overwhelming the LLM
 
     const updatesData = adminUpdates.map((entry: any) => {
@@ -43,10 +48,13 @@ export async function GET() {
 
     // 4. Prompt Gemini
     const prompt = `
-      You are an expert Google Workspace Education Consultant. Your tone should be highly conversational, advisory, and helpful.
+      You are an expert Google Workspace Education Consultant.
       I am providing you with the latest Google Workspace updates that introduce new Admin Console settings.
       
       For each update, explain what the setting does, and then provide tailored Best Practices on how a school district or university should configure it.
+      
+      For the recommendations, keep the conversational piece short. Provide the recommendation, and then the 'why'.
+      Each recommendation MUST be exactly 2 to 3 sentences long.
       
       Here are the updates:
       ${JSON.stringify(updatesData, null, 2)}
@@ -56,11 +64,11 @@ export async function GET() {
         "recommendations": [
           {
             "title": "Update Title",
-            "summary": "A brief conversational summary of what this new admin setting is.",
+            "summary": "A brief 1-sentence summary of what this new admin setting is.",
             "link": "The URL provided in the data",
-            "k12Staff": "Your recommendation for K-12 Staff.",
-            "k12Students": "Your recommendation for K-12 Students. If you deem it necessary, break this down into Elementary vs High School approaches.",
-            "higherEd": "Your recommendation for Higher Education (university staff and students)."
+            "k12Staff": "The recommendation, then the why. (2 to 3 sentences).",
+            "k12Students": "The recommendation, then the why. Differentiate Elementary vs High School if applicable. (2 to 3 sentences).",
+            "higherEd": "The recommendation, then the why. (2 to 3 sentences)."
           }
         ]
       }
