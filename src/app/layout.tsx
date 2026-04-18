@@ -34,6 +34,7 @@ export default function RootLayout({
               <Link href="/" className="nav-link">Workspace Updates</Link>
               <Link href="/industry-news" className="nav-link">Industry News</Link>
               <Link href="/app-ideas" className="nav-link">App Ideas</Link>
+              <Link href="/best-practices" className="nav-link">Best Practices</Link>
             </div>
           </div>
         </nav>
