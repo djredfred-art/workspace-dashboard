@@ -33,6 +33,7 @@ export default function RootLayout({
             <div className="nav-links">
               <Link href="/" className="nav-link">Workspace Updates</Link>
               <Link href="/industry-news" className="nav-link">Industry News</Link>
+              <Link href="/app-ideas" className="nav-link">App Ideas</Link>
             </div>
           </div>
         </nav>
