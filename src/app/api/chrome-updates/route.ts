@@ -5,29 +5,26 @@ export const revalidate = 3600;
 
 export async function GET() {
   try {
-    const res = await fetch('https://chromereleases.googleblog.com/feeds/posts/default?alt=json');
-    const data = await res.json();
-    const allEntries = data.feed?.entry || [];
+    // 1. Fetch current stable milestone
+    const dashRes = await fetch('https://chromiumdash.appspot.com/fetch_releases?channel=Stable&platform=Windows&num=1');
+    const dashData = await dashRes.json();
+    const milestone = dashData[0]?.milestone || 147; // fallback
 
-    // Filter for Stable Channel, ChromeOS, or Chrome Browser
-    const relevantUpdates = allEntries.filter((entry: any) => {
-      const title = entry.title?.$t?.toLowerCase() || '';
-      
-      const isStable = title.includes('stable');
-      const isChromeOS = title.includes('chromeos') || title.includes('chrome os');
-      const isBrowser = title.includes('desktop') || title.includes('chrome browser');
-      const isBeta = title.includes('beta') || title.includes('dev');
+    // 2. Fetch Enterprise features for that milestone
+    const entRes = await fetch(`https://release-notes-787862449254.us-central1.run.app/features?version=${milestone}`);
+    const entData = await entRes.json();
+    const features = entData.features || [];
 
-      return (isStable || isChromeOS || isBrowser) && !isBeta;
-    }).slice(0, 5); // Take top 5 to avoid timeouts
+    // Filter to limit tokens and pick relevant items
+    const relevantUpdates = features.slice(0, 5);
 
-    const updatesData = relevantUpdates.map((entry: any) => {
-      const rawContent = entry.content?.$t || '';
+    const updatesData = relevantUpdates.map((feature: any) => {
+      const rawContent = feature.summary || '';
       const cleanContent = rawContent.replace(/<[^>]*>?/gm, ' ').substring(0, 800) + '...';
       return {
-        title: entry.title?.$t || 'Untitled',
+        title: feature.name || 'Chrome Enterprise Update',
         content: cleanContent,
-        link: entry.link?.find((l: any) => l.rel === 'alternate')?.href || '#'
+        link: 'https://chromeenterprise.google/resources/release-notes/'
       };
     });
 

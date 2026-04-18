@@ -9,35 +9,52 @@ export async function GET(request: Request) {
     const skip = parseInt(searchParams.get('skip') || '0', 10);
     const limit = parseInt(searchParams.get('limit') || '5', 10);
 
-    // 1. Fetch both feeds
-    const [workspaceRes, chromeRes] = await Promise.all([
+    // 1. Fetch current stable milestone for Chrome
+    const dashRes = await fetch('https://chromiumdash.appspot.com/fetch_releases?channel=Stable&platform=Windows&num=1');
+    const dashData = await dashRes.json();
+    const milestone = dashData[0]?.milestone || 147;
+
+    // 2. Fetch both feeds
+    const [workspaceRes, entRes] = await Promise.all([
       fetch('https://workspaceupdates.googleblog.com/feeds/posts/default?alt=json'),
-      fetch('https://chromereleases.googleblog.com/feeds/posts/default?alt=json')
+      fetch(`https://release-notes-787862449254.us-central1.run.app/features?version=${milestone}`)
     ]);
 
     const workspaceData = await workspaceRes.json();
-    const chromeData = await chromeRes.json();
+    const entData = await entRes.json();
 
     const workspaceEntries = workspaceData.feed?.entry || [];
-    const chromeEntries = chromeData.feed?.entry || [];
+    const chromeEntries = entData.features || [];
 
     // Tag and merge
     const allEntries = [
-      ...workspaceEntries.map((e: any) => ({ ...e, source: 'Workspace' })),
-      ...chromeEntries.map((e: any) => ({ ...e, source: 'Chrome' }))
+      ...workspaceEntries.map((e: any) => ({ 
+        source: 'Workspace',
+        title: e.title?.$t || '',
+        content: e.content?.$t || '',
+        published: e.published?.$t || 0,
+        link: e.link?.find((l: any) => l.rel === 'alternate')?.href || '#'
+      })),
+      ...chromeEntries.map((e: any) => ({ 
+        source: 'Chrome',
+        title: e.name || '',
+        content: e.summary || '',
+        published: e.updated?.when || e.created?.when || 0,
+        link: 'https://chromeenterprise.google/resources/release-notes/'
+      }))
     ];
 
     // Sort by published date descending
     allEntries.sort((a: any, b: any) => {
-      const dateA = new Date(a.published?.$t || 0).getTime();
-      const dateB = new Date(b.published?.$t || 0).getTime();
+      const dateA = new Date(a.published).getTime();
+      const dateB = new Date(b.published).getTime();
       return dateB - dateA;
     });
 
-    // 2. Filter for Admin Console / Policy related updates
+    // 3. Filter for Admin Console / Policy related updates
     const adminUpdates = allEntries.filter((entry: any) => {
-      const title = entry.title?.$t?.toLowerCase() || '';
-      const content = entry.content?.$t?.toLowerCase() || '';
+      const title = entry.title.toLowerCase();
+      const content = entry.content.toLowerCase();
       
       const isWeeklyRecap = title.includes('weekly recap');
       
@@ -47,13 +64,8 @@ export async function GET(request: Request) {
         const isForEducation = content.includes('education');
         isRelevant = mentionsAdmin && isForEducation;
       } else {
-        // Chrome filtering
-        const isStable = title.includes('stable');
-        const isChromeOS = title.includes('chromeos') || title.includes('chrome os');
-        const isBrowser = title.includes('desktop') || title.includes('chrome browser');
-        const isBeta = title.includes('beta') || title.includes('dev');
-        const isPolicy = content.includes('policy') || content.includes('admin');
-        isRelevant = (isStable || isChromeOS || isBrowser) && !isBeta && isPolicy;
+        // Chrome Enterprise features are by definition for admins/enterprise
+        isRelevant = true;
       }
       
       return !isWeeklyRecap && isRelevant;
